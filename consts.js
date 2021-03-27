@@ -3,11 +3,19 @@ const STATUS_MESSAGES = {
     SERVICE_UNAVAILABLE: '503 Service Unavailable'
 };
 
-const MONITORING_LOGS = {
-    generateServerListenMessage: (port) => `Server is listening on port ${port}.`,
-    signalCalledMessage: (signal) => `Called signal: ${signal}, closing server`,
-    serverShutdownMessage: 'Server gracefulls shutted down.'
+const INSTANCES_STATUSES = {
+    ONLINE: 'online',
+    DISCONNECTED: 'disconnect'
 };
 
+const MONITORING_LOGS = {
+    workerProcessOnlineMessage: (instanceId) => `Worker (process id - ${instanceId}) is online`,
+    generateServerListenMessage: (port, instanceId) => `Server is listening on port ${port}, instanceId - ${instanceId}.`,
+    startingShutdownMessage: `Got signal for shutting down. Graceful shutdown is starting (time - ${new Date().toISOString()})`,
+    closedServerMessage: (instanceId) => `Closed server instance (instanceId - ${instanceId})`,
+    finishedShutdownMessage: 'Server gracefulls shutted down.' //TODO - TYPo?
+};
+const KEYBOARD_SIGNAL = 'SIGINT';
 
-module.exports = { STATUS_MESSAGES, MONITORING_LOGS };
+
+module.exports = { STATUS_MESSAGES, INSTANCES_STATUSES, MONITORING_LOGS, KEYBOARD_SIGNAL };
