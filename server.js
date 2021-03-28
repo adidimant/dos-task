@@ -4,105 +4,79 @@ const os = require('os');
 const cluster = require('cluster');
 const cron = require('node-cron');
 const _ = require('lodash');
-const { sendRequestDataToMaster, validateRequestTimeFrame, validateIsServerUp, updateRequest } = require('./middlewares');
-const { loadLimitsConfig, gracefulShutdown, parseRequestData } = require('./utils');
-const { MONITORING_LOGS, STATUS_MESSAGES, INSTANCES_STATUSES, KEYBOARD_SIGNAL } = require('./consts');
+const { loadBalancer, validateRequest } = require('./middlewares');
+const { loadLimitsConfig, gracefulShutdown, createWorker, createWorkerServerInstance, runEstablishmentTests } = require('./utils');
+const { MONITORING_LOGS, STATUS_MESSAGES, INSTANCES_STATUSES, KEYBOARD_SIGNAL, EXTERNAL_PORT } = require('./consts');
 
 const limitsConfig = loadLimitsConfig();
-const port = process.env.PORT || 8080;
+const masterPort = process.env.PORT || EXTERNAL_PORT;
 const coresAmount = os.cpus().length;
+let currServerIndex = 0;
 
 let clientsRequests = {}, ipRequests = {};
 let serverInstancesManager = {
-    shutdownInProgress: false, //TODO - change to openForRequests
+    openForRequests: true,
     instances: {}
 };
 
-const createServerInstance = async () => {
-    const app = express();
+const activateEventListenersForMaster = () => {
+    process.on(KEYBOARD_SIGNAL, gracefulShutdown(cluster, serverInstancesManager));
 
-    process.on('message', (message) => {
-        clientsRequests = message.clientsRequests;
-        ipRequests = message.ipRequests;
-        serverInstancesManager = message.serverInstancesManager; //TODO - change to isOn or something
-        console.log('arrived message from parent, process id - ' + process.pid);
-    });
-
-    app.use(sendRequestDataToMaster);
-
-    //app.use(validateIsServerUp(serverInstancesManager.instances));
-    app.use(express.json());
-
-    app.get('/', async (req, res) => {
-        const { clientId, clientIp } = parseRequestData(req);
-        if (validateIsServerUp(serverInstancesManager.instances, process.pid) && validateRequestTimeFrame(clientsRequests, clientId) && validateRequestTimeFrame(ipRequests, clientIp)) {
-            res.json(STATUS_MESSAGES.OK + ' process id - ' + process.pid);
-        } else {
-            res.json('503, process id - ' + process.pid);
+    cluster.on(INSTANCES_STATUSES.ONLINE, worker => {
+        if (!worker.isTestedWorker) {
+            console.log(MONITORING_LOGS.workerProcessOnlineMessage(worker.process.pid));
         }
     });
 
-    app.listen(port, () => console.log(MONITORING_LOGS.generateServerListenMessage(port, process.pid)));
-};
-
-const sendDataToWorkers = () => {
-    const requests = {
-        serverInstancesManager,
-        clientsRequests,
-        ipRequests
-    };
-    _.forEach(cluster.workers, (worker) => {
-        worker.send(requests);
+    cluster.on(INSTANCES_STATUSES.DISCONNECTED, (worker) => {
+        serverInstancesManager.instances[worker.process.pid].status = INSTANCES_STATUSES.DISCONNECTED;
+        if (serverInstancesManager.openForRequests) { // Unplanned disconnect of server instance - terminating current instance & creating new one
+            worker.kill();
+            delete serverInstancesManager.instances[worker.process.pid];
+            if (!worker.isTestedWorker) {
+                console.log(MONITORING_LOGS.disconnectedServerMessage(worker.process.pid));
+            }
+            createWorker(cluster, serverInstancesManager, worker.isTestedWorker);
+        } else {
+            console.log(MONITORING_LOGS.closedServerMessage(worker.process.pid));
+        }
     });
 };
 
-const createWorker = () => {
-    const serverInstance = cluster.fork();
-    serverInstancesManager.instances[serverInstance.process.pid] = INSTANCES_STATUSES.ONLINE;
-    serverInstance.on('message', (message) => {
-        clientsRequests = message.clientsRequests;
-        ipRequests = message.ipRequests;
-        serverInstancesManager = message.serverInstancesManager; //TODO - change to isOn or something
-        console.log('arrived message from parent, process id - ' + process.pid);
+const createSingleCoreServer = () => {
+    const app = express();
+    app.use(express.json());
+
+    app.get('/', (req, res) => {
+        if (validateRequest(req, serverInstancesManager, clientsRequests, ipRequests)) {
+            res.json(STATUS_MESSAGES.OK);
+        } else {
+            res.json(STATUS_MESSAGES.SERVICE_UNAVAILABLE);
+        }
     });
+
+    app.listen(masterPort, () => console.log(MONITORING_LOGS.generateServerListenMessage(masterPort, null)));
 };
 
 const establishServerInstances = async () => {
     if (coresAmount > 1) {
         if (cluster.isMaster) {
+            const server = express().get('/', loadBalancer(currServerIndex, serverInstancesManager, clientsRequests, ipRequests));
+            server.listen(masterPort, () => console.log(MONITORING_LOGS.generateServerListenMessage(masterPort, null)));
+
+            activateEventListenersForMaster();
+
             for (const i of _.range(0, coresAmount)) {
-                createWorker();
+                createWorker(cluster, serverInstancesManager, false);
             }
-            sendDataToWorkers();
 
-            cluster.on('message', (childWorker, requestData) => {
-                updateRequest(clientsRequests, requestData.clientId);
-                updateRequest(ipRequests, requestData.clientIp);
-                console.log('recieved in parent (process id - ' + process.pid + '): ' + JSON.stringify(requestData));
-                sendDataToWorkers();
-            });
+            await runEstablishmentTests(cluster, coresAmount);
 
-            cluster.on(KEYBOARD_SIGNAL, gracefulShutdown(cluster, serverInstancesManager));
-
-            cluster.on(INSTANCES_STATUSES.ONLINE, worker => {
-                console.log(MONITORING_LOGS.workerProcessOnlineMessage(worker.process.pid));
-            });
-
-            cluster.on(INSTANCES_STATUSES.DISCONNECTED, (worker) => {
-                serverInstancesManager.instances[worker.process.pid] = INSTANCES_STATUSES.DISCONNECTED;
-                if (!serverInstancesManager.shutdownInProgress) { // Unplanned disconnect of server instance - terminating current instance & creating new one
-                    worker.kill();
-                    delete serverInstancesManager.instances[worker.process.pid];
-                    createWorker();
-                } else {
-                    console.log(MONITORING_LOGS.closedServerMessage(worker.process.pid));
-                }
-            });
         } else {
-            await createServerInstance(); //TOOD - consider delete await
+            createWorkerServerInstance(cluster.worker.id);
         }
     } else {
-        await createServerInstance(); //TODO - make sure this is signal for 1 core only!
+        createSingleCoreServer();
     }
 };
 
@@ -113,10 +87,10 @@ const cleanOldRequests = () => {
 
     clean(clientsRequests);
     clean(ipRequests);
-    sendDataToWorkers(); //TODO - change name
 };
 
 if (cluster.isMaster) {
+    // Cron task that runs on the master for cleaning old requests that we shouldn't track anymore
     const task = cron.schedule(`*/${limitsConfig.OLD_REQUESTS_CLEANUP_TIME_IN_SEC} * * * * *`, () => cleanOldRequests());
     task.start();
 }
