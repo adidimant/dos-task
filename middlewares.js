@@ -1,7 +1,7 @@
 const request = require('request');
 const _ = require('lodash');
 const { loadLimitsConfig, parseRequestData } = require('./utils');
-const { STATUS_MESSAGES, INSTANCES_STATUSES, BASE_URL, DISCONNECTION_HANDELED_ERROR_CODES } = require('./consts');
+const { MONITORING_LOGS, STATUS_MESSAGES, INSTANCES_STATUSES, BASE_URL, DISCONNECTION_HANDELED_ERROR_CODES } = require('./consts');
 const limitsConfig = loadLimitsConfig();
 
 
@@ -44,7 +44,7 @@ const loadBalancer = (currServerIndex, serverInstancesManager, clientsRequests, 
                 if (_.includes(DISCONNECTION_HANDELED_ERROR_CODES, error.code)) {
                     return;
                 } else {
-                    console.log(error); //TODO - implement as const
+                    console.log(MONITORING_LOGS.unHandledDisconnectionErrorMessage(error));
                 }
             });
             req.pipe(pipedRequest).pipe(res);

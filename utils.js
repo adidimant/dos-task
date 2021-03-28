@@ -101,7 +101,7 @@ const runEstablishmentTests = async (cluster, coresAmount) => {
     }
 
     testedWorker.kill();
-    await new Promise(res => setTimeout(res, 4000));
+    await new Promise(res => setTimeout(res, 3500));
     if (_.keys(cluster.workers).length !== coresAmount) {
         failedTests.push(ESTABLISHMENT_TESTS.SUDDEN_DISCONNECTION);
     }

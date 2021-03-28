@@ -15,6 +15,7 @@ const MONITORING_LOGS = {
     generateServerListenMessage: (port, instanceId) => `Server is listening on port ${port}${(instanceId ? `, instanceId - ${instanceId}.` : ' (Master)')}`,
     startingShutdownMessage: `Got signal for shutting down. Graceful shutdown is starting(time - ${new Date().toISOString()})`,
     disconnectedServerMessage: (instanceId) => `Sudden server instance disconnection (instanceId - ${instanceId})`,
+    unHandledDisconnectionErrorMessage: (error) => `A disconnection sudden error that may not have been handled - ${error}`,
     closedServerMessage: (instanceId) => `Closed server instance(instanceId - ${instanceId})`,
     finishedShutdownMessage: 'Server gracefully shutted down.',
     failedGracefulShutdown: (err) => `Encountered a sudden error during graceful shutdown, exiting main server. error - ${err}`
