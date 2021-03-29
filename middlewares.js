@@ -29,15 +29,15 @@ const validateRequest = (req, serverInstancesManager, clientsRequests, ipRequest
     serverInstancesManager.openForRequests && validateRequestLimiters(req, clientsRequests, ipRequests)
 );
 
-const loadBalancer = (currServerIndex, serverInstancesManager, clientsRequests, ipRequests) => {
+const loadBalancer = (serverInstancesManager, clientsRequests, ipRequests) => {
     return (req, res) => {
         if (!validateRequest(req, serverInstancesManager, clientsRequests, ipRequests)) {
             res.json(STATUS_MESSAGES.SERVICE_UNAVAILABLE);
             return;
         }
 
-        currServerIndex = _.values(serverInstancesManager.instances)[currServerIndex].status === INSTANCES_STATUSES.ONLINE ?
-            currServerIndex : _.findIndex(_.values(serverInstancesManager.instances), ({ status }) => status === INSTANCES_STATUSES.ONLINE);
+        const currServerIndex = _.values(serverInstancesManager.instances)[serverInstancesManager.currServerIndex].status === INSTANCES_STATUSES.ONLINE ?
+            serverInstancesManager.currServerIndex : _.findIndex(_.values(serverInstancesManager.instances), ({ status }) => status === INSTANCES_STATUSES.ONLINE);
         if (currServerIndex !== -1) {
             const slavePort = _.values(serverInstancesManager.instances)[currServerIndex].port;
             const pipedRequest = request({ url: `${BASE_URL}:${slavePort}${req.url}` }).on('error', (error) => {
@@ -49,7 +49,7 @@ const loadBalancer = (currServerIndex, serverInstancesManager, clientsRequests, 
             });
             req.pipe(pipedRequest).pipe(res);
         }
-        currServerIndex = (currServerIndex + 1) % _.keys(serverInstancesManager.instances).length;
+        serverInstancesManager.currServerIndex = (currServerIndex + 1) % _.keys(serverInstancesManager.instances).length;
     };
 };
 

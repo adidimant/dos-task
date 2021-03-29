@@ -11,11 +11,11 @@ const { MONITORING_LOGS, STATUS_MESSAGES, INSTANCES_STATUSES, KEYBOARD_SIGNAL, E
 const limitsConfig = loadLimitsConfig();
 const masterPort = process.env.PORT || EXTERNAL_PORT;
 const coresAmount = os.cpus().length;
-let currServerIndex = 0;
 
 let clientsRequests = {}, ipRequests = {};
 let serverInstancesManager = {
     openForRequests: true,
+    currServerIndex: 0,
     instances: {}
 };
 
