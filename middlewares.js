@@ -47,6 +47,7 @@ const loadBalancer = (serverInstancesManager, clientsRequests, ipRequests) => {
                     console.log(MONITORING_LOGS.unHandledDisconnectionErrorMessage(error));
                 }
             });
+            console.log(serverInstancesManager.currServerIndex);
             req.pipe(pipedRequest).pipe(res);
         }
         serverInstancesManager.currServerIndex = (currServerIndex + 1) % _.keys(serverInstancesManager.instances).length;

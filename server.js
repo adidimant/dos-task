@@ -61,7 +61,7 @@ const createSingleCoreServer = () => {
 const establishServerInstances = async () => {
     if (coresAmount > 1) {
         if (cluster.isMaster) {
-            const server = express().get('/', loadBalancer(currServerIndex, serverInstancesManager, clientsRequests, ipRequests));
+            const server = express().get('/', loadBalancer(serverInstancesManager, clientsRequests, ipRequests));
             server.listen(masterPort, () => console.log(MONITORING_LOGS.generateServerListenMessage(masterPort, null)));
 
             activateEventListenersForMaster();
